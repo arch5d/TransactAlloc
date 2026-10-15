@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Cloud Management System</title>
+  <link rel="stylesheet" href="/styles.css"/>
+</head>
+<body>
+
+<!-- ============================ sign-in ============================ -->
+<div id="login" class="login-screen">
+  <div class="login-glow"></div>
+  <div class="login-card">
+    <div class="login-mark">CMS</div>
+    <h1>Cloud Management System</h1>
+    <p class="login-sub">Adaptive, fragmentation-aware resource orchestration</p>
+
+    <div class="field">
+      <label for="loginUser">Account</label>
+      <div id="accountPicker" class="account-picker">
+        <span class="muted small">Loading accounts&hellip;</span>
+      </div>
+      <input id="loginUser" class="text-input" autocomplete="off"
+             placeholder="or type a username"/>
+    </div>
+
+    <button id="signin" class="btn btn-primary btn-block">Sign in</button>
+    <div id="loginErr" class="login-err" hidden></div>
+    <p class="login-foot muted small">Demo authentication &mdash; accounts are the users defined in the database.</p>
+  </div>
+</div>
+
+<!-- ============================ the app ============================ -->
+<div id="app" hidden>
+
+  <header class="topbar">
+    <a class="brand" href="#overview">
+      <span class="brand-mark">CMS</span>
+      <span class="brand-text">Cloud&nbsp;Management&nbsp;System</span>
+    </a>
+
+    <nav id="nav" class="nav">
+      <a href="#overview" class="nav-link">Overview</a>
+      <a href="#account"  class="nav-link">Account</a>
+      <a href="#clusters" class="nav-link">Clusters</a>
+      <a href="#jobs"     class="nav-link">Jobs</a>
+      <a href="#deadlock" class="nav-link">Deadlock</a>
+      <a href="#analytics" class="nav-link">Analytics</a>
+    </nav>
+
+    <div class="topbar-right">
+      <div class="chips">
+        <span class="chip" id="engineChip"><i class="dot"></i><span id="engineText">stopped</span></span>
+        <span class="chip" id="queueChip">queue 0</span>
+        <span class="chip" id="policyChip">auto</span>
+      </div>
+      <div class="control-group">
+        <select id="polMode" class="select-sm" title="Scheduling policy">
+          <option value="auto">auto</option>
+          <option value="fcfs">fcfs</option>
+          <option value="priority">priority</option>
+          <option value="round-robin">round-robin</option>
+        </select>
+        <button id="start" class="btn btn-sm btn-primary">Start</button>
+        <button id="stop"  class="btn btn-sm">Stop</button>
+      </div>
+      <div class="account-chip" id="accountChip">
+        <span class="avatar" id="acctAvatar">?</span>
+        <span class="acct-meta">
+          <b id="acctName">&mdash;</b>
+          <small id="acctRole">&mdash;</small>
+        </span>
+        <button id="logout" class="btn btn-sm btn-ghost" title="Sign out">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- ---------------------------- overview ---------------------------- -->
+    <section id="overview" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Overview</h2>
+          <p class="muted">Live state of the allocation engine and the four clusters.</p>
+        </div>
+        <div class="section-actions">
+          <button id="batch" class="btn btn-sm">Batch</button>
+          <input id="batchCount" type="number" min="1" max="500" value="20" class="num-input-sm" title="Batch size"/>
+          <button id="defragAll" class="btn btn-sm">Defrag all</button>
+          <button id="reset" class="btn btn-sm btn-danger">Reset</button>
+        </div>
+      </div>
+      <div id="kpis" class="kpis"></div>
+      <div id="clusterCards" class="cluster-cards"></div>
+    </section>
+
+    <!-- ---------------------------- account ----------------------------- -->
+    <section id="account" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Account</h2>
+          <p class="muted">Quota, in-flight usage and jobs per account.</p>
+        </div>
+        <div id="accountTabs" class="tabs"></div>
+      </div>
+
+      <div id="accountCard" class="account-card"></div>
+
+      <div class="split">
+        <div class="panel">
+          <h3>Submit a job <span class="muted small">as <b id="submitAs">&mdash;</b></span></h3>
+          <form id="jobForm" class="form-grid" autocomplete="off">
+            <label>Task<input id="jTask" class="text-input" value="Matrix_Mult"/></label>
+            <label>Cores<input id="jCpus" class="text-input" type="number" min="1" value="4"/></label>
+            <label>RAM&nbsp;(MB)<input id="jRam" class="text-input" type="number" min="1" value="8192"/></label>
+            <label>Priority<input id="jPri" class="text-input" type="number" min="1" max="10" value="5"/></label>
+            <label>Duration&nbsp;(s)<input id="jDur" class="text-input" type="number" min="1" value="8"/></label>
+            <button type="submit" class="btn btn-primary">Submit job</button>
+          </form>
+        </div>
+        <div class="panel">
+          <h3>Jobs by this account</h3>
+          <div id="accountJobs" class="mini-jobs"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------------------- clusters ---------------------------- -->
+    <section id="clusters" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Clusters</h2>
+          <p class="muted">Block-level memory layout and fragmentation per cluster.</p>
+        </div>
+      </div>
+      <div id="clusterDetails" class="cluster-details"></div>
+    </section>
+
+    <!-- ------------------------------ jobs ------------------------------ -->
+    <section id="jobs" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Jobs</h2>
+          <p class="muted" id="jobsSub">All jobs in the system.</p>
+        </div>
+        <div class="section-actions">
+          <select id="jobStatusFilter" class="select-sm">
+            <option value="ALL">All statuses</option>
+            <option value="RUNNING">Running</option>
+            <option value="QUEUED">Queued</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="FAILED">Failed</option>
+          </select>
+          <select id="jobUserFilter" class="select-sm"><option value="ALL">All accounts</option></select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>#</th><th>Task</th><th>Account</th><th>Cores</th><th>RAM</th>
+                <th>Pri</th><th>Status</th><th>Node</th><th>Left</th><th>Wait</th><th>Turnaround</th></tr>
+          </thead>
+          <tbody id="jobsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------------------------- deadlock ---------------------------- -->
+    <section id="deadlock" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Deadlock</h2>
+          <p class="muted">Wait-for graph of the live engine plus a live circular-wait demonstration.</p>
+        </div>
+        <div class="section-actions">
+          <button id="dlDemo" class="btn btn-sm btn-primary">Run deadlock demo</button>
+        </div>
+      </div>
+      <div class="split">
+        <div class="panel">
+          <h3>Wait-for graph</h3>
+          <div id="wfgGraph" class="wfg-graph"></div>
+          <p class="muted small" id="wfgNote"></p>
+        </div>
+        <div class="panel">
+          <h3>Demo transcript</h3>
+          <div id="demoTranscript" class="transcript muted">Run the demo to see the circular wait resolved live.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>System event feed</h3>
+        <div id="eventFeed" class="event-feed"></div>
+      </div>
+    </section>
+
+    <!-- ---------------------------- analytics --------------------------- -->
+    <section id="analytics" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Analytics</h2>
+          <p class="muted">Time series and cumulative transaction statistics.</p>
+        </div>
+      </div>
+      <div class="split">
+        <div class="panel">
+          <h3>Queue depth &amp; running jobs</h3>
+          <div id="chartQueue" class="chart"></div>
+        </div>
+        <div class="panel">
+          <h3>Fragmentation index per cluster</h3>
+          <div id="chartFrag" class="chart"></div>
+        </div>
+      </div>
+      <div class="split">
+        <div class="panel">
+          <h3>Transaction log</h3>
+          <div class="table-wrap"><table class="data-table compact">
+            <thead><tr><th>Op</th><th>Outcome</th><th>Count</th><th>Avg ms</th><th>Max ms</th></tr></thead>
+            <tbody id="txnBody"></tbody>
+          </table></div>
+        </div>
+        <div class="panel">
+          <h3>Average utilization</h3>
+          <div class="table-wrap"><table class="data-table compact">
+            <thead><tr><th>Cluster</th><th>CPU %</th><th>RAM %</th><th>Frag</th></tr></thead>
+            <tbody id="utilBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Defragmentation history</h3>
+        <div id="defragList" class="defrag-list"></div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      Cloud Management System &middot; adaptive reallocation with ACID semantics &amp; wait-for-graph deadlock handling.
+    </footer>
+  </main>
+</div>
+
+<div id="toasts" class="toasts"></div>
+<script src="/app.js"></script>
+</body>
+</html>
