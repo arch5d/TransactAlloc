@@ -78,7 +78,7 @@ def cmd_batch(args):
             ids.append(
                 _insert_job(
                     conn,
-                    "archu",
+                    "Archita",
                     rng.choice(TASKS),
                     rng.choice((1, 2, 2, 4, 4, 6, 8)),
                     rng.choice((2048, 4096, 4096, 8192, 12288, 16384, 32768)),
@@ -124,7 +124,7 @@ def build_parser():
     sub.add_parser("stats")
     sub.add_parser("dashboard")
     s = sub.add_parser("submit")
-    s.add_argument("--user", default="archu")
+    s.add_argument("--user", default="Archita")
     s.add_argument("--task", default="Matrix_Mult")
     s.add_argument("--cpus", type=int, default=2)
     s.add_argument("--ram", type=int, default=4096)

@@ -25,7 +25,7 @@ TASKS = ("Matrix_Mult", "Monte_Carlo", "Image_Filter", "PageRank",
 
 
 class SubmitJob(BaseModel):
-    user: str = "archu"
+    user: str = "Archita"
     task: str = "Task"
     cpus: int = Field(ge=1)
     ram_mb: int = Field(ge=1)

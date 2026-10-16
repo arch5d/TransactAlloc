@@ -75,7 +75,7 @@ py -3 main.py serve     # http://127.0.0.1:8000
 ```
 
 Open the **Cloud Management System** dashboard, sign in with one of the seeded
-accounts (`admin`, `archu`, `student` — demo authentication), then press
+accounts (`admin`, `Archita`, `student` — demo authentication), then press
 **Start** and **Batch**. Use the top navbar to move between Overview, Account,
 Clusters, Jobs, Deadlock and Analytics; the Account tabs show each user's quota
 and jobs. To watch a deadlock form and get rolled back live, press **Run

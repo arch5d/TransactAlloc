@@ -57,7 +57,7 @@ def test_state_shape(client):
 def test_users_endpoint(client):
     body = client.get("/api/users").json()
     names = {u["username"] for u in body["users"]}
-    assert {"admin", "archu", "student"} <= names, names
+    assert {"admin", "Archita", "student"} <= names, names
     for u in body["users"]:
         for key in ("role", "quota_cpus", "quota_ram_mb", "used_cpus", "used_ram_mb",
                     "cpu_pct", "ram_pct", "queued", "running", "completed",
@@ -67,11 +67,11 @@ def test_users_endpoint(client):
 
     # a queued job shows up in the account's in-flight usage
     client.post("/api/jobs", json={
-        "user": "archu", "task": "Matrix_Mult", "cpus": 4, "ram_mb": 4096,
+        "user": "Archita", "task": "Matrix_Mult", "cpus": 4, "ram_mb": 4096,
         "priority": 5, "duration_sec": 3,
     })
-    archu = next(u for u in client.get("/api/users").json()["users"] if u["username"] == "archu")
-    assert archu["used_cpus"] == 4 and archu["queued"] == 1, archu
+    archita = next(u for u in client.get("/api/users").json()["users"] if u["username"] == "Archita")
+    assert archita["used_cpus"] == 4 and archita["queued"] == 1, archita
 
 
 def test_history_endpoint(client):
@@ -94,7 +94,7 @@ def test_reset_then_submit_and_run(client):
     assert started.status_code == 200 and started.json()["ok"] is True
 
     single = client.post("/api/jobs", json={
-        "user": "archu", "task": "Web_Crawl", "cpus": 2, "ram_mb": 2048,
+        "user": "Archita", "task": "Web_Crawl", "cpus": 2, "ram_mb": 2048,
         "priority": 2, "duration_sec": 2,
     })
     assert single.status_code == 200, single.text
@@ -143,7 +143,7 @@ def test_stop_aborts_and_requeues_inflight_jobs(client):
     client.post("/api/engine/start", params={"workers": 2, "policy": "fcfs"})
     for _ in range(2):
         client.post("/api/jobs", json={
-            "user": "archu", "task": "Matrix_Mult", "cpus": 2, "ram_mb": 2048,
+            "user": "Archita", "task": "Matrix_Mult", "cpus": 2, "ram_mb": 2048,
             "priority": 5, "duration_sec": 6,
         })
     time.sleep(1.5)  # let the two workers pick the jobs up

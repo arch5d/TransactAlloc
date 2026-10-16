@@ -14,7 +14,7 @@ TRUNCATE Execution_Logs, Defrag_Moves, Defrag_Events, Memory_Blocks,
 
 INSERT INTO Users (username, role, quota_cpus, quota_ram_mb) VALUES
     ('admin',   'Admin', 64, 262144),
-    ('archu',   'User',  32, 131072),
+    ('Archita', 'User',  32, 131072),
     ('student', 'User',  16,  65536);
 
 INSERT INTO Machines (hostname, ip_address, status) VALUES
