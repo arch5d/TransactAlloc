@@ -63,6 +63,17 @@ def _wfg_state(eng):
     }
 
 
+def _demo_graph_state(graph, cycle):
+    edges = graph.edges_as_list()
+    nodes = sorted({node for edge in edges for node in edge})
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "edge_details": graph.edge_details(),
+        "cycle": list(cycle or []),
+    }
+
+
 # ----------------------------------------------------------------------
 # state
 # ----------------------------------------------------------------------
@@ -554,7 +565,12 @@ def deadlock_demo():
                 holders = [r["job_id"] for r in conn.execute(
                     "SELECT DISTINCT job_id FROM Allocations WHERE machine_id=%s AND released_at IS NULL", (m1,)).fetchall()]
                 for h in holders:
-                    graph.add_wait(job_a, h)
+                    graph.add_wait(job_a, h, {
+                        "machine_id": m1,
+                        "requested_cpus": 12,
+                        "requested_ram_mb": 0,
+                        "reason": "INSUFFICIENT_RESOURCES",
+                    })
                 say(f"Job#{job_a} requests 12 cores on node 1 -> BLOCKED (held by {holders})")
 
             if request(conn, job_b, m2, 0, 40960):
@@ -563,10 +579,16 @@ def deadlock_demo():
                 holders = [r["job_id"] for r in conn.execute(
                     "SELECT DISTINCT job_id FROM Allocations WHERE machine_id=%s AND released_at IS NULL", (m2,)).fetchall()]
                 for h in holders:
-                    graph.add_wait(job_b, h)
+                    graph.add_wait(job_b, h, {
+                        "machine_id": m2,
+                        "requested_cpus": 0,
+                        "requested_ram_mb": 40960,
+                        "reason": "INSUFFICIENT_RESOURCES",
+                    })
                 say(f"Job#{job_b} requests 40GB on node 2 -> BLOCKED (held by {holders})")
 
             cycle = graph.find_cycle()
+            demo_graph = _demo_graph_state(graph, cycle)
             if not cycle:
                 say("[WFG] no cycle - no deadlock")
             else:
@@ -603,4 +625,4 @@ def deadlock_demo():
             if m1 or m2:
                 conn.execute("DELETE FROM Machines WHERE machine_id = ANY(%s)", ([m for m in (m1, m2) if m],))
         say("Throwaway demo clusters and jobs removed; live state untouched.")
-    return {"ok": True, "transcript": transcript}
+    return {"ok": True, "transcript": transcript, "graph": demo_graph}

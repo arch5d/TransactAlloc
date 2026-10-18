@@ -129,9 +129,19 @@ def test_defrag_without_body(client):
 def test_deadlock_demo(client):
     r = client.post("/api/deadlock-demo")
     assert r.status_code == 200, r.text
-    transcript = "\n".join(r.json()["transcript"])
+    body = r.json()
+    transcript = "\n".join(body["transcript"])
     assert "circular wait detected" in transcript, transcript
     assert "ROLLBACK committed" in transcript, transcript
+    graph = body["graph"]
+    assert graph["cycle"][0] == graph["cycle"][-1]
+    assert set(graph["cycle"]) == set(graph["nodes"])
+    assert sorted(graph["edges"]) == sorted([
+        [graph["cycle"][0], graph["cycle"][1]],
+        [graph["cycle"][1], graph["cycle"][0]],
+    ])
+    assert len(graph["edge_details"]) == 2
+    assert len({detail["machine_id"] for detail in graph["edge_details"]}) == 2
 
 
 def test_engine_stop(client):
