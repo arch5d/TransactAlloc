@@ -14,7 +14,12 @@ const make = (tag, cls, html) => {
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const num = (n, d = 0) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d));
-const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour12: false });
+const clock = (ts) => {
+  const date = new Date(ts);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleTimeString([], { hour12: false });
+};
 
 let SESSION = localStorage.getItem("cms.user") || null;
 let activeAccount = null;      // tab selected in the Account section
@@ -142,7 +147,10 @@ function renderKPIs() {
   const peakFrag = Math.max(0, ...state.clusters.map((cl) => cl.frag_index));
   const tp = stats && stats.throughput;
   const perMin = tp && tp.span_sec > 0 ? (tp.done / tp.span_sec) * 60 : 0;
-  const deadlocks = state.system_events.filter((e) => e.kind === "DEADLOCK").length;
+  const events = Array.isArray(state.system_events)
+    ? state.system_events.filter((e) => e && typeof e === "object")
+    : [];
+  const deadlocks = events.filter((e) => e.kind === "DEADLOCK").length;
   const defragRuns = (stats && stats.defrag && stats.defrag.runs) || 0;
 
   const defs = [
@@ -304,29 +312,46 @@ function renderJobs() {
 }
 
 function renderDeadlock() {
-  const edges = state.wfg.edges;
+  const wfg = state.wfg || {};
+  const edges = Array.isArray(wfg.edges) ? wfg.edges : [];
+  const details = Array.isArray(wfg.edge_details) ? wfg.edge_details : [];
   cycleNodes = detectCycle(edges);
-  drawWFG($("wfgGraph"), edges, cycleNodes);
+  drawWFG($("wfgGraph"), edges, cycleNodes, details);
   $("wfgNote").textContent = edges.length
     ? `${edges.length} wait-for edge(s)` + (cycleNodes.size ? " · cycle present!" : " · acyclic")
     : "No wait-for edges — no deadlock possible right now.";
 
   const feed = $("eventFeed");
   feed.innerHTML = "";
-  const evs = state.system_events.slice(0, 40);
+  const evs = Array.isArray(state.system_events)
+    ? state.system_events.filter((e) => e && typeof e === "object").slice(0, 40)
+    : [];
+  const latestDeadlock = evs.find((e) => e.kind === "DEADLOCK");
+  const summary = $("deadlockSummary");
+  summary.hidden = !latestDeadlock;
+  if (latestDeadlock) {
+    summary.innerHTML = `<b>Deadlock recovery</b><span>${esc(latestDeadlock.message)}</span>`;
+  }
   if (!evs.length) feed.appendChild(make("div", "empty", "No system events yet."));
   for (const e of evs) {
-    feed.appendChild(make("div", "event sev-" + e.severity, `
+    const kind = esc(e.kind || "EVENT");
+    const severity = esc(e.severity || "INFO");
+    const deadlockClass = e.kind === "DEADLOCK" ? " deadlock-event" : "";
+    feed.appendChild(make("div", "event sev-" + severity + deadlockClass, `
       <span class="ts">${clock(e.ts)}</span>
-      <span class="kind ${e.kind}">${e.kind}</span>
+      <span class="kind ${kind}">${kind}</span>
       <span>${esc(e.message)}</span>`));
   }
 }
 
 function detectCycle(edges) {
+  const safeEdges = Array.isArray(edges)
+    ? edges.filter((edge) => Array.isArray(edge) && edge.length >= 2
+      && edge[0] != null && edge[1] != null)
+    : [];
   const adj = {};
-  for (const [a, b] of edges) (adj[a] = adj[a] || []).push(b);
-  const nodes = new Set(edges.flat());
+  for (const [a, b] of safeEdges) (adj[a] = adj[a] || []).push(b);
+  const nodes = new Set(safeEdges.flat());
   const color = {}, stack = new Set();
   let found = new Set();
   const dfs = (n, path) => {
@@ -343,9 +368,27 @@ function detectCycle(edges) {
   return found;
 }
 
-function drawWFG(container, edges, cycle) {
+function edgeKey(waiter, holder) {
+  return `${waiter}:${holder}`;
+}
+
+function edgeLabel(detail) {
+  if (!detail) return "wait relationship";
+  const resources = [];
+  if (detail.requested_cpus != null) resources.push(`${detail.requested_cpus} CPU`);
+  if (detail.requested_ram_mb != null) resources.push(`${detail.requested_ram_mb} MB RAM`);
+  const cluster = detail.machine_id != null ? `cluster ${detail.machine_id}` : "cluster unknown";
+  const reason = detail.reason ? String(detail.reason).split("\n")[0] : "resource unavailable";
+  return `${resources.length ? resources.join(" + ") + " on " : ""}${cluster}: ${reason}`;
+}
+
+function drawWFG(container, edges, cycle, details = []) {
   container.innerHTML = "";
-  const nodes = [...new Set(edges.flat())];
+  const safeEdges = edges.filter((edge) => Array.isArray(edge) && edge.length >= 2);
+  const detailMap = new Map(details
+    .filter((detail) => detail && detail.waiter != null && detail.holder != null)
+    .map((detail) => [edgeKey(detail.waiter, detail.holder), detail]));
+  const nodes = [...new Set(safeEdges.flat())];
   if (!nodes.length) { container.appendChild(make("div", "muted small", "Graph is empty.")); return; }
   const W = 420, H = 280, R = Math.min(W, H) / 2 - 46, cx = W / 2, cy = H / 2;
   const pos = {};
@@ -363,9 +406,10 @@ function drawWFG(container, edges, cycle) {
      <marker id="ahr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
        <path d="M0,0 L7,3 L0,6 Z" fill="#ef4444"/></marker>`;
   svg.appendChild(defs);
-  for (const [a, b] of edges) {
+  for (const [a, b] of safeEdges) {
     const [x1, y1] = pos[a], [x2, y2] = pos[b];
     const inCycle = cycle.has(a) && cycle.has(b);
+    const label = edgeLabel(detailMap.get(edgeKey(a, b)));
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len, rr = 24;
     const line = document.createElementNS(NS, "line");
@@ -374,7 +418,21 @@ function drawWFG(container, edges, cycle) {
     line.setAttribute("stroke", inCycle ? "#ef4444" : "#94a3b8");
     line.setAttribute("stroke-width", inCycle ? 2.6 : 1.6);
     line.setAttribute("marker-end", inCycle ? "url(#ahr)" : "url(#ah)");
+    const title = document.createElementNS(NS, "title");
+    title.textContent = `Job #${a} waits for Job #${b}: ${label}`;
+    line.appendChild(title);
     svg.appendChild(line);
+    const mid = document.createElementNS(NS, "text");
+    mid.setAttribute("x", (x1 + x2) / 2);
+    mid.setAttribute("y", (y1 + y2) / 2 - 5);
+    mid.setAttribute("text-anchor", "middle");
+    mid.setAttribute("font-size", "9");
+    mid.setAttribute("fill", inCycle ? "#a11c1c" : "#64748b");
+    mid.textContent = `${a} → ${b}`;
+    const labelTitle = document.createElementNS(NS, "title");
+    labelTitle.textContent = label;
+    mid.appendChild(labelTitle);
+    svg.appendChild(mid);
   }
   for (const n of nodes) {
     const [x, y] = pos[n];

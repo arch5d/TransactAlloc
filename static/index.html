@@ -182,6 +182,10 @@
         <div class="panel">
           <h3>Wait-for graph</h3>
           <div id="wfgGraph" class="wfg-graph"></div>
+          <div class="wfg-legend">
+            <span><i class="wfg-arrow"></i> waiter &rarr; holder</span>
+            <span><i class="wfg-cycle"></i> detected cycle</span>
+          </div>
           <p class="muted small" id="wfgNote"></p>
         </div>
         <div class="panel">
@@ -191,6 +195,7 @@
       </div>
       <div class="panel">
         <h3>System event feed</h3>
+        <div id="deadlockSummary" class="deadlock-summary" hidden></div>
         <div id="eventFeed" class="event-feed"></div>
       </div>
     </section>
