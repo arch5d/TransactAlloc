@@ -43,7 +43,7 @@ best-fit, allocated through real ACID transactions, and monitored live.
 
 | File | Responsibility |
 |---|---|
-| `db.py` | single place that knows the DSN; `connect()`, `run_sql_file()`, reset helpers |
+| `db.py` | environment-driven database configuration; `connect()`, `run_sql_file()`, reset helpers |
 | `schema.sql` / `seed.sql` | 3NF schema + transactional functions; 4-cluster seed |
 | `engine.py` | the engine: bounded queue, worker pool, adaptive policy selection, reconciler, deadlock monitor, metrics sampler |
 | `worker.py` | one job's lifecycle: pick cluster → allocate → run → release, with FRAGMENTED→defrag→retry |
@@ -117,6 +117,25 @@ therefore maintained at application level, not read from `pg_locks`.
 
 `POST /api/deadlock-demo` runs the report §5 circular wait live through the
 real database, the real WFG and a real rollback, and returns the transcript.
+The live `/api/state` response also exposes `wfg.edges` and matching
+`wfg.edge_details` metadata. The dashboard labels arrows as waiter → holder,
+shows resource/cluster explanations when available, and displays actual
+deadlock/rollback events from `system_events`.
+
+WFG edges persist only while a job is genuinely blocked. A waiter's outgoing
+edges are replaced when its blockers change and are cleared after allocation,
+release, completion, rollback, cancellation, or shutdown. This avoids both
+transient cycles that cannot be monitored and stale edges that create false
+cycles.
+
+## Database configuration
+
+`db.py` constructs all connections from `TRANSALLOC_DB_NAME`,
+`TRANSALLOC_DB_HOST`, `TRANSALLOC_DB_PORT`, `TRANSALLOC_DB_USER`, and
+`TRANSALLOC_DB_PASSWORD`. The local defaults are `transactalloc_p3`,
+`localhost`, `5432`, `postgres`, and `crm`. The same helper is used by
+application code and PostgreSQL-dependent tests. `.env` files are not loaded
+automatically; export the variables described by `.env.example`.
 
 ## Concurrency & consistency
 

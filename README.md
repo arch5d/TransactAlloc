@@ -39,7 +39,7 @@ into a running web service with a real block-level memory model.
 | Database | PostgreSQL 17 (Docker) |
 | Backend | Python + FastAPI + uvicorn, `psycopg` 3 (psycopg3) |
 | Frontend | Vanilla HTML / CSS / JS (no build step) |
-| Tests | pytest (26 tests, including an in-process API end-to-end suite) |
+| Tests | pytest; CI runs the database-free suite, while PostgreSQL tests require a configured database |
 
 ---
 
@@ -51,13 +51,13 @@ into a running web service with a real block-level memory model.
 docker run -d --name transactalloc-pg -e POSTGRES_PASSWORD=crm -e POSTGRES_DB=transactalloc_p3 -p 5432:5432 postgres:17
 ```
 
-Connection defaults live in `db.py`: `host=localhost port=5432 user=postgres
-password=crm dbname=transactalloc_p3`.
+Connection settings are read from environment variables; see [`.env.example`](.env.example).
+`.env` files are not loaded automatically. Defaults are `localhost:5432`, user `postgres`, password `crm`, and database `transactalloc_p3`.
 
 ### 2. Python
 
 ```powershell
-py -3 -m pip install "psycopg[binary,pool]" fastapi uvicorn jinja2 httpx pytest apscheduler
+py -3 -m pip install -r requirements.txt
 ```
 
 ### 3. Schema + seed
@@ -90,6 +90,7 @@ py -3 main.py list                      # cluster status
 py -3 main.py submit --task X --cpus 4 --ram 8192
 py -3 main.py batch --count 20
 py -3 main.py dashboard                 # console node metrics
+py -3 main.py run --policy fcfs --workers 4 --max-rounds 25 --avoidance off
 
 py -3 demo.py                           # report §5 walkthrough (detection)
 py -3 demo.py --skip-batch --avoidance on   # Banker's avoidance instead
@@ -97,6 +98,12 @@ py -3 test_deadlock.py                  # proves both deadlock layers
 py -3 wfg.py                            # wait-for-graph self-check (no DB)
 py -3 banker.py                         # Banker's self-check (no DB)
 ```
+
+`run` dispatches queued jobs through the selected policy. `--max-rounds`
+bounds scheduler dispatches and the scheduler is stopped cleanly afterward.
+`--avoidance on` is intentionally rejected by the live runner because Banker
+avoidance is demo/evaluation-only; use `demo.py --avoidance on` or pure
+evaluation mode instead.
 
 ---
 
@@ -106,12 +113,25 @@ py -3 banker.py                         # Banker's self-check (no DB)
 py -3 -m pytest tests -q
 ```
 
-- `tests/test_pure.py` — policies, adaptive selector, WFG, Banker (no DB).
+- `tests/test_evaluate.py`, `tests/test_pure.py`, `tests/test_cli.py`, and
+  `tests/test_engine.py` — database-free evaluation, policies, WFG, Banker,
+  CLI, API-contract, and live-monitor tests.
 - `tests/test_db.py` — allocation/release, block-map validity, deadlock scenario.
 - `tests/test_frag.py` — fragmentation math, defrag plan/apply, block-map invariant.
 - `tests/test_concurrency.py` — 64 threads racing the allocator: never overcommits.
 - `tests/test_api_e2e.py` — the whole app in-process: submit → run → stats,
   policy switch, defrag, deadlock demo, graceful stop & resume.
+
+The database-free suite used by CI is:
+
+```powershell
+py -3 -m pytest tests\test_evaluate.py tests\test_pure.py tests\test_cli.py tests\test_engine.py -q
+```
+
+The remaining database-dependent tests require PostgreSQL and initialized
+schema/seed data. They are not claimed as passing in the current local
+environment because authentication for user `postgres` failed during fixture
+setup.
 
 ---
 
@@ -119,12 +139,20 @@ py -3 -m pytest tests -q
 
 ```powershell
 py -3 evaluate.py --jobs 20 --workers 4 --out docs/EVALUATION.md
+py -3 evaluate.py --pure --jobs 12 --seed 11
 ```
 
 Runs the same synthetic workload under each policy (best-fit placement) and
 writes throughput, average/p95 wait, turnaround, peak fragmentation,
 defragmentation activity and allocation-txn latency. Current results:
 [`docs/EVALUATION.md`](docs/EVALUATION.md).
+
+`--pure` runs without PostgreSQL and compares FCFS, priority, round-robin
+(one-tick quantum), and demo-only Banker avoidance on a deterministic
+two-phase workload. It reports response/resource wait, nearest-rank P95,
+turnaround, service, makespan, throughput, and Banker refusal attempts.
+Deadlock and rollback counts in pure mode are synthetic simulation events, not
+live PostgreSQL engine or WFG measurements.
 
 ---
 
@@ -136,7 +164,8 @@ report's scenario is a safe-looking grant that is actually fatal.
 
 **Detection** (`wfg.py` + engine monitor) — let it happen, then recover. Each
 blocked job gets an edge to whoever holds what it wants; a cycle is a deadlock;
-the **youngest** job is rolled back. The demo:
+the **youngest** job is rolled back, its resources are released, and it is
+re-queued. The live monitor records transaction and system events. The demo:
 
 ```
 [WFG] circular wait detected: Job#121 -> Job#122 -> Job#121
@@ -147,6 +176,11 @@ the **youngest** job is rolled back. The demo:
 
 Nothing is printed theatre — every line follows a real transaction, and the
 dashboard afterwards reads committed rows.
+
+The API exposes `wfg.edges` and matching `wfg.edge_details` in `/api/state`.
+The dashboard renders waiter → holder arrows, resource/cluster explanations,
+an empty-graph state, and actual deadlock/rollback events from the API event
+feed.
 
 Why the graph is application-level, not `pg_locks`: these jobs are **not**
 blocked inside PostgreSQL. `AllocateJobResources` raised `FRAGMENTED` /
