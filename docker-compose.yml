@@ -16,5 +16,20 @@ services:
       timeout: 5s
       retries: 12
 
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TRANSALLOC_DB_NAME: ${TRANSALLOC_DB_NAME:-transactalloc_p3}
+      TRANSALLOC_DB_HOST: postgres
+      TRANSALLOC_DB_PORT: 5432
+      TRANSALLOC_DB_USER: ${TRANSALLOC_DB_USER:-postgres}
+      TRANSALLOC_DB_PASSWORD: ${TRANSALLOC_DB_PASSWORD:?Set TRANSALLOC_DB_PASSWORD before starting Compose}
+    ports:
+      - "${TRANSALLOC_APP_PORT:-8000}:8000"
+
 volumes:
   postgres_data:

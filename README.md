@@ -54,6 +54,17 @@ docker run -d --name transactalloc-pg -e POSTGRES_PASSWORD=crm -e POSTGRES_DB=tr
 Connection settings are read from environment variables; see [`.env.example`](.env.example).
 `.env` files are not loaded automatically. Defaults are `localhost:5432`, user `postgres`, password `crm`, and database `transactalloc_p3`.
 
+For the complete database and application setup, export
+`TRANSALLOC_DB_PASSWORD` and run:
+
+```powershell
+docker compose up --build
+```
+
+The dashboard is then available at `http://127.0.0.1:8000`. The application
+container waits for PostgreSQL, applies `schema.sql` and `seed.sql`, and starts
+the ASGI app. Do not commit the environment file containing your password.
+
 ### 2. Python
 
 ```powershell
