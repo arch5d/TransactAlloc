@@ -104,11 +104,10 @@ class Engine:
         self._recon_thread.start()
 
     def _discard_job(self, job_id: int):
-        """Called by a worker when a job leaves the engine: done or requeued."""
+        """Called when a worker leaves the queue; WFG cleanup is explicit."""
         jid = int(job_id)
         with self.mutex:
             self._inflight.discard(jid)
-        self.wfg.clear_job(jid)
 
     def _load_queued(self):
         """Re-admit jobs left QUEUED in the database (e.g. across a restart).

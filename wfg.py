@@ -13,22 +13,42 @@ Run this file directly to check the detector without a database:
 """
 
 import threading
+import time
 
 
 class WaitForGraph:
     def __init__(self):
         self.edges = {}      # waiter -> set of holders it is blocked behind
+        self._details = {}  # (waiter, holder) -> resource explanation
         self._lock = threading.RLock()
 
-    def add_wait(self, waiter, holder):
+    def add_wait(self, waiter, holder, details=None):
         if waiter != holder:
             with self._lock:
                 self.edges.setdefault(waiter, set()).add(holder)
+                detail = dict(details or {})
+                detail.update(waiter=waiter, holder=holder)
+                detail.setdefault("updated_at", time.time())
+                self._details[(waiter, holder)] = detail
+
+    def set_waits(self, waiter, waits):
+        """Replace a waiter's blockers with its current allocation attempt."""
+        with self._lock:
+            self._clear_waits(waiter)
+            for wait in waits:
+                self.add_wait(waiter, wait["holder"], wait)
+
+    def _clear_waits(self, waiter):
+        self.edges.pop(waiter, None)
+        for key in [key for key in self._details if key[0] == waiter]:
+            self._details.pop(key, None)
 
     def clear_job(self, job_id):
         """Drop a job from the graph -- it finished, or it was rolled back."""
         with self._lock:
-            self.edges.pop(job_id, None)
+            self._clear_waits(job_id)
+            for key in [key for key in self._details if job_id in key]:
+                self._details.pop(key, None)
             for holders in self.edges.values():
                 holders.discard(job_id)
 
@@ -40,6 +60,16 @@ class WaitForGraph:
         """JSON-friendly view for the dashboard."""
         with self._lock:
             return [[w, h] for w, hs in sorted(self.edges.items()) for h in sorted(hs)]
+
+    def edge_details(self):
+        """Return explanations for each currently active wait-for edge."""
+        with self._lock:
+            return [
+                dict(self._details[(waiter, holder)])
+                for waiter, holders in sorted(self.edges.items())
+                for holder in sorted(holders)
+                if (waiter, holder) in self._details
+            ]
 
     def find_cycle(self):
         """Return one cycle as [a, b, ..., a], or None.

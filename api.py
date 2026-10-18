@@ -56,6 +56,13 @@ def get_engine() -> engine_mod.Engine:
     return _engine
 
 
+def _wfg_state(eng):
+    return {
+        "edges": eng.wfg.edges_as_list() if eng else [],
+        "edge_details": eng.wfg.edge_details() if eng else [],
+    }
+
+
 # ----------------------------------------------------------------------
 # state
 # ----------------------------------------------------------------------
@@ -156,7 +163,7 @@ def state():
             "reason": eng.current_reason if eng else "engine stopped",
         },
         "engine": {"running": bool(eng and eng.running()), "workers": eng.num_workers if eng else 0},
-        "wfg": {"edges": eng.wfg.edges_as_list() if eng else []},
+        "wfg": _wfg_state(eng),
     }
 
 
@@ -597,4 +604,3 @@ def deadlock_demo():
                 conn.execute("DELETE FROM Machines WHERE machine_id = ANY(%s)", ([m for m in (m1, m2) if m],))
         say("Throwaway demo clusters and jobs removed; live state untouched.")
     return {"ok": True, "transcript": transcript}
-

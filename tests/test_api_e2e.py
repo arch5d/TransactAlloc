@@ -44,6 +44,8 @@ def test_state_shape(client):
     body = r.json()
     for key in ("clusters", "jobs", "counts", "policy", "engine", "wfg", "maps"):
         assert key in body, f"/api/state missing {key}"
+    assert body["wfg"]["edges"] == []
+    assert body["wfg"]["edge_details"] == []
     assert len(body["clusters"]) == 4
     for key in ("queued", "running", "completed", "failed"):
         assert key in body["counts"]
@@ -166,4 +168,3 @@ def test_stop_aborts_and_requeues_inflight_jobs(client):
     # Re-running must not see stale jobs from the last run.
     client.post("/api/reset")
     assert client.get("/api/state").json()["counts"]["completed"] == 0
-

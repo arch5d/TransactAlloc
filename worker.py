@@ -68,16 +68,26 @@ def _stopping():
     return _stop_event is not None and _stop_event.is_set()
 
 
-def _graph_add_waits(conn, job_id, machine_id):
+def _graph_add_waits(conn, job, machine_id, reason):
     """Record edges job_id -> every job currently holding cluster machine_id."""
     if _graph is None:
         return []
+    job_id = job["job_id"]
     holders = [r[0] for r in conn.execute(
         "SELECT DISTINCT job_id FROM Allocations WHERE machine_id=%s AND released_at IS NULL",
         (machine_id,),
     ).fetchall()]
-    for h in holders:
-        _graph.add_wait(job_id, h)
+    waits = [
+        {
+            "holder": h,
+            "machine_id": machine_id,
+            "requested_cpus": job["req_cpus"],
+            "requested_ram_mb": job["req_ram_mb"],
+            "reason": reason,
+        }
+        for h in holders
+    ]
+    _graph.set_waits(job_id, waits)
     return holders
 
 
@@ -149,6 +159,7 @@ def try_allocate(conn, job, machine_id, worker_id):
         reason = str(exc).strip().splitlines()[0]
         dur = int((time.perf_counter() - start) * 1000)
         if "FRAGMENTED" in reason:
+            _graph_clear(job["job_id"])
             _log(conn, job["job_id"], "WARN", f"fragmented on m{machine_id}: {reason}")
             conn.execute(
                 "INSERT INTO System_Events (ts,kind,severity,message) VALUES (NOW(),'DEFRAG','WARN',%s)",
@@ -156,7 +167,7 @@ def try_allocate(conn, job, machine_id, worker_id):
             )
         else:
             # Blocked behind other jobs: this is the wait-for edge.
-            holders = _graph_add_waits(conn, job["job_id"], machine_id)
+            holders = _graph_add_waits(conn, job, machine_id, reason)
             _log(conn, job["job_id"], "ERROR",
                  f"allocation rolled back on m{machine_id}: {reason} (held by {holders})")
         conn.execute(
@@ -198,6 +209,7 @@ def _abort(conn, job, ran_for, worker_id):
         # A reset may already have removed the job; the abort is best-effort.
         print(f"[WORKER-{worker_id}] abort of #{job['job_id']} skipped: {exc}")
     print(f"[WORKER-{worker_id}] Job #{job['job_id']} ABORTED (engine stop), {remaining}s left")
+    _graph_clear(job["job_id"])
     _notify_release(job["job_id"])
 
 
@@ -259,6 +271,7 @@ def execute_job(job, worker_id, policy="fcfs"):
                 return
             machine_id = pick_machine(conn, job, policy)
             if machine_id is None:
+                _graph_clear(job["job_id"])
                 _requeue(conn, job, worker_id)
                 return
             if not try_allocate(conn, job, machine_id, worker_id):
