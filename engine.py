@@ -241,14 +241,18 @@ class Engine:
         def _run():
             while not self._stop.is_set():
                 try:
-                    cycle = self.wfg.find_cycle()
-                    if cycle:
-                        self._resolve_deadlock(cycle)
+                    self._monitor_once()
                 except Exception:
                     pass
                 time.sleep(1)
         self._monitor_thread = threading.Thread(target=_run, name="ta-deadlock", daemon=True)
         self._monitor_thread.start()
+
+    def _monitor_once(self):
+        cycle = self.wfg.find_cycle()
+        if cycle:
+            return self._resolve_deadlock(cycle)
+        return None
 
     def _resolve_deadlock(self, cycle):
         """Roll back the youngest job in a detected cycle. One transaction."""
@@ -266,6 +270,7 @@ class Engine:
             submitted = {int(j): float(t) for j, t in rows}
             victim = wfg_mod.youngest(cycle, submitted)
             survivor = ", ".join(f"#{j}" for j in members if j != victim) or "none"
+            rolled_back = False
             with db.connect(autocommit=True) as c:
                 start = time.perf_counter()
                 try:
@@ -285,13 +290,18 @@ class Engine:
                         "INSERT INTO System_Events (ts,kind,severity,message) VALUES (NOW(),'DEADLOCK','ERROR',%s)",
                         (f"circular wait {' -> '.join('#'+str(j) for j in cycle)}; rolled back #{victim}, {survivor} unblocked",),
                     )
+                    rolled_back = True
                 except Exception as exc:
                     c.execute(
                         "INSERT INTO System_Events (ts,kind,severity,message) VALUES (NOW(),'DEADLOCK','WARN',%s)",
                         (f"rollback of #{victim} failed: {str(exc)[:120]}",),
                     )
+            if not rolled_back:
+                return None
+            self._discard_job(victim)
             self.wfg.clear_job(victim)
             print(f"[DEADLOCK] cycle {' -> '.join('#'+str(j) for j in cycle)}; rolled back #{victim}")
+            return victim
 
     def _sample_once(self):
         now = time.time()
