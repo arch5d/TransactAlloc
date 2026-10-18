@@ -5,27 +5,40 @@ database session, autocommit is deliberately opt-in, and SQL scripts are
 executed in a single round trip.
 """
 
+import os
 import pathlib
 
 import psycopg
 
-DB_NAME = "transactalloc_p3"
-_BASE = "host=localhost port=5432 user=postgres password=crm"
-DSN = f"{_BASE} dbname={DB_NAME}"
-ADMIN_DSN = f"{_BASE} dbname=postgres"
+DB_HOST = os.getenv("TRANSALLOC_DB_HOST", "localhost")
+DB_PORT = os.getenv("TRANSALLOC_DB_PORT", "5432")
+DB_USER = os.getenv("TRANSALLOC_DB_USER", "postgres")
+DB_PASSWORD = os.getenv("TRANSALLOC_DB_PASSWORD", "crm")
+DB_NAME = os.getenv("TRANSALLOC_DB_NAME", "transactalloc_p3")
+
+
+def _connection_kwargs(database):
+    return {
+        "host": DB_HOST,
+        "port": DB_PORT,
+        "user": DB_USER,
+        "password": DB_PASSWORD,
+        "dbname": database,
+    }
 
 
 def connect(autocommit=False, row_factory=None):
     # Default row factory is the plain tuple: every console module in this
     # repo unpacks rows positionally (mid, host, ... = row). api.py opts into
     # dict rows so it can serialise straight to JSON.
+    kwargs = _connection_kwargs(DB_NAME)
     if row_factory is None:
-        return psycopg.connect(DSN, autocommit=autocommit)
-    return psycopg.connect(DSN, autocommit=autocommit, row_factory=row_factory)
+        return psycopg.connect(autocommit=autocommit, **kwargs)
+    return psycopg.connect(autocommit=autocommit, row_factory=row_factory, **kwargs)
 
 
 def create_database():
-    with psycopg.connect(ADMIN_DSN, autocommit=True) as conn:
+    with psycopg.connect(autocommit=True, **_connection_kwargs("postgres")) as conn:
         try:
             conn.execute(f"CREATE DATABASE {DB_NAME}")
             print(f"[DB] created database {DB_NAME}")

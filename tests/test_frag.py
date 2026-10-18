@@ -1,10 +1,5 @@
-import psycopg
-
 import db
 import frag
-
-DB = "transactalloc_p3"
-DSN = f"host=localhost port=5432 user=postgres password=crm dbname={DB}"
 
 
 def setup_module():
