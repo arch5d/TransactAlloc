@@ -28,6 +28,7 @@ let state = null;
 let stats = null;
 let history = null;
 let cycleNodes = new Set();
+let demoWfg = null;
 
 /* ------------------------------- transport ---------------------------- */
 async function api(path, opts = {}) {
@@ -312,14 +313,18 @@ function renderJobs() {
 }
 
 function renderDeadlock() {
-  const wfg = state.wfg || {};
+  const wfg = demoWfg || state.wfg || {};
   const edges = Array.isArray(wfg.edges) ? wfg.edges : [];
   const details = Array.isArray(wfg.edge_details) ? wfg.edge_details : [];
-  cycleNodes = detectCycle(edges);
+  cycleNodes = demoWfg && Array.isArray(wfg.cycle)
+    ? new Set(wfg.cycle)
+    : detectCycle(edges);
   drawWFG($("wfgGraph"), edges, cycleNodes, details);
+  const source = demoWfg ? "Last deadlock demo graph" : "Live engine graph";
   $("wfgNote").textContent = edges.length
-    ? `${edges.length} wait-for edge(s)` + (cycleNodes.size ? " · cycle present!" : " · acyclic")
-    : "No wait-for edges — no deadlock possible right now.";
+    ? `${source}: ${edges.length} wait-for edge(s)` +
+      (cycleNodes.size ? " · cycle present!" : " · acyclic")
+    : `${source}: no wait-for edges.`;
 
   const feed = $("eventFeed");
   feed.innerHTML = "";
@@ -603,7 +608,12 @@ function wireActions() {
   };
   $("reset").onclick = async () => {
     if (!confirm("Reset all jobs and rebuild block maps? The engine will stop.")) return;
-    try { await post("/api/reset"); toast("Reset", "clusters cleared", "ok"); refresh(); refreshStats(); refreshHistory(); }
+    try {
+      await post("/api/reset");
+      demoWfg = null;
+      toast("Reset", "clusters cleared", "ok");
+      refresh(); refreshStats(); refreshHistory();
+    }
     catch (e) { toast("Reset failed", e.message, "err"); }
   };
   $("batch").onclick = async () => {
@@ -637,7 +647,9 @@ function wireActions() {
     try {
       const d = await post("/api/deadlock-demo");
       box.textContent = d.transcript.join("\n");
+      demoWfg = d.graph && typeof d.graph === "object" ? d.graph : null;
       toast("Deadlock demo", "circular wait resolved", "ok");
+      renderDeadlock();
       refresh(); refreshStats();
     } catch (e) { box.textContent = "Demo failed: " + e.message; toast("Demo failed", e.message, "err"); }
   };
