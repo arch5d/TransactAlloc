@@ -13,12 +13,14 @@ import worker
 
 
 class JobScheduler:
-    def __init__(self, max_queue_size=100, num_workers=4, policy="fcfs"):
+    def __init__(self, max_queue_size=100, num_workers=4, policy="fcfs", max_rounds=None):
         self.queue = PriorityQueue(maxsize=max_queue_size)
         self.mutex = threading.Lock()
         self.sem_available_jobs = threading.Semaphore(0)
         self.policy = policy
         self.num_workers = num_workers
+        self.max_rounds = max_rounds
+        self._rounds = 0
         self._stop = threading.Event()
         self._threads = []
         # Tie-breaker for the priority tuple. The report uses time.time() here,
@@ -45,7 +47,10 @@ class JobScheduler:
             with self.mutex:
                 if self.queue.empty():
                     continue
+                if self.max_rounds is not None and self._rounds >= self.max_rounds:
+                    continue
                 priority_value, _seq, job = self.queue.get()
+                self._rounds += 1
 
             # The mutex is released BEFORE the database work starts.
             #
@@ -80,6 +85,11 @@ class JobScheduler:
             time.sleep(0.2)
         print("[SCHEDULER] drain timed out")
         return False
+
+    @property
+    def rounds(self):
+        with self.mutex:
+            return self._rounds
 
     def stop(self):
         self._stop.set()

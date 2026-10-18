@@ -6,6 +6,12 @@ Also preserves the old console interface under `console()` for bonus/demo.
 import argparse
 import random
 import sys
+import time
+
+import dashboard as dash
+import db
+import policies
+import scheduler
 
 # Windows consoles default to cp1252, which cannot encode the arrows and
 # box-drawing characters the log lines use; a worker thread printing one would
@@ -22,10 +28,6 @@ try:
     import uvicorn
 
     import api
-    import db
-    import dashboard as dash
-    import policies
-    import scheduler
     _HAS_WEB = True
 except Exception as e:
     _HAS_WEB = False
@@ -115,6 +117,37 @@ def cmd_dashboard(args):
         dash.job_summary(conn)
 
 
+def cmd_run(args):
+    if getattr(args, "avoidance", "off") != "off":
+        raise ValueError("Banker's avoidance is available through demo.py, not the live console runner")
+
+    with db.connect() as conn:
+        jobs = scheduler.load_queued(conn)
+
+    runner = scheduler.JobScheduler(
+        num_workers=args.workers,
+        policy=args.policy,
+        max_rounds=args.max_rounds,
+    )
+    ordering = ORDERING[args.policy]
+    ordered_jobs = ordering(jobs)
+    runner.start()
+    for priority_value, job in enumerate(ordered_jobs):
+        runner.submit_job(priority_value, job)
+
+    try:
+        while runner.rounds < min(args.max_rounds, len(ordered_jobs)):
+            if runner.queue.empty() and not runner.rounds:
+                break
+            time.sleep(0.05)
+        while scheduler.worker.active_count() > 0:
+            time.sleep(0.05)
+    finally:
+        runner.stop()
+
+    print(f"[RUN] dispatched {runner.rounds} round(s) with policy={args.policy}")
+
+
 def build_parser():
     p = argparse.ArgumentParser(description="TransactAlloc")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -137,6 +170,7 @@ def build_parser():
     r.add_argument("--policy", choices=("fcfs", "priority", "round-robin", "best-fit"), default="fcfs")
     r.add_argument("--workers", type=int, default=4)
     r.add_argument("--max-rounds", type=int, default=25)
+    r.add_argument("--avoidance", choices=("off", "on"), default="off")
     w = sub.add_parser("serve")
     w.add_argument("--host", default="127.0.0.1")
     w.add_argument("--port", type=int, default=8000)
@@ -153,6 +187,7 @@ def console_main():
         "list": cmd_list,
         "stats": cmd_stats,
         "dashboard": cmd_dashboard,
+        "run": cmd_run,
     }[parsed.cmd](parsed)
 
 
